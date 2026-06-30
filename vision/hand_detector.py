@@ -18,14 +18,11 @@ class HandDetector:
 
     def __init__(
         self,
-        static_image_mode: bool =False,
-        max_num_hands: int = 2,
+        static_image_mode: bool = False,
+        max_num_hands: int = 1,
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
     ) -> None:
-        """
-        Initialize the MediaPipe Hands detector.
-        """
 
         self._mp_hands = mp.solutions.hands
         self._mp_drawing = mp.solutions.drawing_utils
@@ -38,39 +35,37 @@ class HandDetector:
             min_tracking_confidence=min_tracking_confidence,
         )
 
+    # ----------------------------------------------------------
+    # Process Frame
+    # ----------------------------------------------------------
+
     def process(self, frame) -> Any:
-        """
-        Process a BGR frame and return MediaPipe detection results.
-        """
 
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb_frame.flags.writeable = False
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb.flags.writeable = False
 
-        results = self._hands.process(rgb_frame)
+        results = self._hands.process(rgb)
 
-        rgb_frame.flags.writeable = True
+        rgb.flags.writeable = True
 
         return results
 
-    def draw_landmarks(self, frame, results) -> None:
-        """
-        Draw hand landmarks, skeleton, bounding boxes,
-        and handedness labels.
-        """
+    # ----------------------------------------------------------
+    # Draw Hand
+    # ----------------------------------------------------------
+
+    def draw_landmarks(self, frame, results):
 
         if not results.multi_hand_landmarks:
             return
 
-        height, width, _ = frame.shape
+        h, w, _ = frame.shape
 
         for hand_landmarks, handedness in zip(
             results.multi_hand_landmarks,
             results.multi_handedness,
         ):
 
-            # ---------------------------------
-            # Draw landmarks and hand skeleton
-            # ---------------------------------
             self._mp_drawing.draw_landmarks(
                 frame,
                 hand_landmarks,
@@ -79,55 +74,50 @@ class HandDetector:
                 self._mp_drawing_styles.get_default_hand_connections_style(),
             )
 
-            # ---------------------------------
-            # Bounding Box
-            # ---------------------------------
-            x_coordinates = []
-            y_coordinates = []
+            xs = []
+            ys = []
 
             for landmark in hand_landmarks.landmark:
-                x_coordinates.append(int(landmark.x * width))
-                y_coordinates.append(int(landmark.y * height))
+                xs.append(int(landmark.x * w))
+                ys.append(int(landmark.y * h))
 
-            x_min = min(x_coordinates)
-            x_max = max(x_coordinates)
-            y_min = min(y_coordinates)
-            y_max = max(y_coordinates)
+            xmin = min(xs)
+            xmax = max(xs)
+            ymin = min(ys)
+            ymax = max(ys)
 
             padding = 20
 
             cv2.rectangle(
                 frame,
-                (x_min - padding, y_min - padding),
-                (x_max + padding, y_max + padding),
+                (xmin - padding, ymin - padding),
+                (xmax + padding, ymax + padding),
                 (0, 255, 0),
                 2,
             )
 
-            # ---------------------------------
-            # Hand Label
-            # ---------------------------------
             label = handedness.classification[0].label
-            confidence = handedness.classification[0].score
+            score = handedness.classification[0].score
 
             cv2.putText(
                 frame,
-                f"{label} ({confidence:.2f})",
-                (x_min, y_min - 10),
+                f"{label} ({score:.2f})",
+                (xmin, ymin - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 (0, 255, 255),
                 2,
-                cv2.LINE_AA,
             )
+
+    # ----------------------------------------------------------
+    # Get Normalized Landmarks
+    # ----------------------------------------------------------
 
     def get_landmarks(self, frame, results) -> list:
         """
-        Extract landmark coordinates for all detected hands.
+        Returns landmarks normalized relative to the wrist.
 
-        Returns:
-            A list where each element represents one detected hand.
-            Each hand contains a list of 21 landmark dictionaries.
+        This format matches dataset.csv exactly.
         """
 
         hands_data = []
@@ -135,19 +125,20 @@ class HandDetector:
         if not results.multi_hand_landmarks:
             return hands_data
 
-        height, width, _ = frame.shape
-
         for hand_landmarks in results.multi_hand_landmarks:
+
+            wrist = hand_landmarks.landmark[0]
 
             landmarks = []
 
             for landmark_id, landmark in enumerate(hand_landmarks.landmark):
+
                 landmarks.append(
                     {
                         "id": landmark_id,
-                        "x": int(landmark.x * width),
-                        "y": int(landmark.y * height),
-                        "z": landmark.z,
+                        "x": landmark.x - wrist.x,
+                        "y": landmark.y - wrist.y,
+                        "z": landmark.z - wrist.z,
                     }
                 )
 
@@ -155,20 +146,18 @@ class HandDetector:
 
         return hands_data
 
-    def get_fingertips(self, frame, results) -> list:
-        """
-        Extract fingertip coordinates.
+    # ----------------------------------------------------------
+    # Get Fingertips
+    # ----------------------------------------------------------
 
-        Returns:
-            A list of dictionaries, one for each detected hand.
-        """
+    def get_fingertips(self, frame, results):
 
         fingertips = []
 
         if not results.multi_hand_landmarks:
             return fingertips
 
-        height, width, _ = frame.shape
+        h, w, _ = frame.shape
 
         fingertip_ids = {
             "thumb": 4,
@@ -180,80 +169,69 @@ class HandDetector:
 
         for hand_landmarks in results.multi_hand_landmarks:
 
-            hand_data = {}
+            hand = {}
 
-            for finger_name, landmark_id in fingertip_ids.items():
+            for finger, idx in fingertip_ids.items():
 
-                landmark = hand_landmarks.landmark[landmark_id]
+                landmark = hand_landmarks.landmark[idx]
 
-                hand_data[finger_name] = {
-                    "id": landmark_id,
-                    "x": int(landmark.x * width),
-                    "y": int(landmark.y * height),
+                hand[finger] = {
+                    "id": idx,
+                    "x": int(landmark.x * w),
+                    "y": int(landmark.y * h),
                     "z": landmark.z,
                 }
 
-            fingertips.append(hand_data)
+            fingertips.append(hand)
 
         return fingertips
 
-    def get_finger_states(self, results) -> list:
-        """
-        Determine whether each finger is open or closed.
+    # ----------------------------------------------------------
+    # Finger States
+    # ----------------------------------------------------------
 
-        Returns:
-            A list of dictionaries, one for each detected hand.
-        """
+    def get_finger_states(self, results):
 
-        finger_states = []
+        states = []
 
         if not results.multi_hand_landmarks:
-            return finger_states
+            return states
 
         for hand_landmarks, handedness in zip(
             results.multi_hand_landmarks,
             results.multi_handedness,
         ):
 
-            landmarks = hand_landmarks.landmark
+            lm = hand_landmarks.landmark
 
-            hand_label = handedness.classification[0].label
+            hand = handedness.classification[0].label
 
-            # ---------------------------------
-            # Thumb
-            # ---------------------------------
-            thumb_tip = landmarks[4]
-            thumb_ip = landmarks[3]
-
-            # Camera is mirrored (cv2.flip(frame, 1))
-            if hand_label == "Right":
-                thumb_open = thumb_tip.x < thumb_ip.x
+            if hand == "Right":
+                thumb = lm[4].x < lm[3].x
             else:
-                thumb_open = thumb_tip.x > thumb_ip.x
+                thumb = lm[4].x > lm[3].x
 
-            # ---------------------------------
-            # Other Fingers
-            # ---------------------------------
-            index_open = landmarks[8].y < landmarks[6].y
-            middle_open = landmarks[12].y < landmarks[10].y
-            ring_open = landmarks[16].y < landmarks[14].y
-            pinky_open = landmarks[20].y < landmarks[18].y
+            index = lm[8].y < lm[6].y
+            middle = lm[12].y < lm[10].y
+            ring = lm[16].y < lm[14].y
+            pinky = lm[20].y < lm[18].y
 
-            finger_states.append(
+            states.append(
                 {
-                    "thumb": thumb_open,
-                    "index": index_open,
-                    "middle": middle_open,
-                    "ring": ring_open,
-                    "pinky": pinky_open,
+                    "thumb": thumb,
+                    "index": index,
+                    "middle": middle,
+                    "ring": ring,
+                    "pinky": pinky,
                 }
             )
 
-        return finger_states
+        return states
 
-    def close(self) -> None:
-        """
-        Release MediaPipe resources.
-        """
+    # ----------------------------------------------------------
+    # Close
+    # ----------------------------------------------------------
+
+    def close(self):
 
         self._hands.close()

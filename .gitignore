@@ -1,19 +1,65 @@
+# ==========================================
+# SignSense-AI .gitignore
+# ==========================================
+
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
+*$py.class
 
 # Virtual Environment
 venv/
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
 
 # macOS
 .DS_Store
 
-# VS Code
-.vscode/
-
 # Logs
 *.log
 
-# Environment Variables
-.env
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ==========================================
+# Dataset
+# ==========================================
+
+# Ignore raw dataset images
+dataset/raw/
+
+# Ignore processed images
+dataset/processed/
+
+# Ignore generated CSV (recreate using process_dataset.py)
+dataset/dataset.csv
+
+# ==========================================
+# Trained Models
+# ==========================================
+
+# Ignore trained models (recreate using train_model.py)
+models/asl_model.pkl
+models/label_encoder.pkl
+
+# ==========================================
+# Misc
+# ==========================================
+
+*.zip
+*.tar
+*.gz

@@ -1,116 +1,134 @@
+"""
+main.py
+
+SignSense AI
+
+Real-time ASL Alphabet Recognition using:
+- MediaPipe Hands
+- Random Forest Classifier
+"""
+
 import time
+
 import cv2
 
 from camera.camera import Camera
 from utils.fps import FPSCounter
 from vision.hand_detector import HandDetector
+from vision.sign_predictor import SignPredictor
 
 
 def main():
-    """
-    Main application for SignSense AI.
-    """
 
     camera = Camera()
-    fps_counter = FPSCounter()
     hand_detector = HandDetector()
+    fps_counter = FPSCounter()
+    predictor = SignPredictor()
 
     camera.open()
 
-    print("✅ SignSense AI started.")
-    print("Press 'Q' to quit.")
+    print("===================================")
+    print("      SignSense AI Started")
+    print("===================================")
+    print("Press Q to quit.\n")
 
-    # Print results every 5 seconds
-    last_print_time = time.time()
+    prediction = "No Hand"
+    confidence = 0.0
+
+    last_prediction_time = time.time()
 
     try:
+
         while True:
-            # -----------------------------
-            # Read camera frame
-            # -----------------------------
+
+            # -----------------------------------
+            # Read Frame
+            # -----------------------------------
             frame = camera.read()
 
-            # Mirror the frame
             frame = cv2.flip(frame, 1)
 
-            # -----------------------------
-            # Hand Detection
-            # -----------------------------
+            # -----------------------------------
+            # Detect Hands
+            # -----------------------------------
             results = hand_detector.process(frame)
 
-            # -----------------------------
-            # Landmark Extraction
-            # -----------------------------
-            landmarks = hand_detector.get_landmarks(frame, results)
-
-            # -----------------------------
-            # Fingertip Extraction
-            # -----------------------------
-            fingertips = hand_detector.get_fingertips(frame, results)
-
-            # -----------------------------
-            # Finger State Detection
-            # -----------------------------
-            finger_states = hand_detector.get_finger_states(results)
-
-            # -----------------------------
-            # Print every 5 seconds
-            # -----------------------------
-            current_time = time.time()
-
-            if current_time - last_print_time >= 5:
-                if finger_states:
-                    print("\n========== Finger States ==========")
-
-                    for hand_number, state in enumerate(finger_states, start=1):
-                        print(f"Hand {hand_number}")
-
-                        for finger, status in state.items():
-                            print(
-                                f"  {finger.capitalize():<7}: {'UP' if status else 'DOWN'}"
-                            )
-
-                        print("-----------------------------------")
-
-                else:
-                    print("\nNo hands detected.")
-
-                last_print_time = current_time
-
-            # -----------------------------
-            # Draw Hand Landmarks
-            # -----------------------------
             hand_detector.draw_landmarks(frame, results)
 
-            # -----------------------------
-            # FPS Counter
-            # -----------------------------
-            fps = fps_counter.get_fps()
+            landmarks = hand_detector.get_landmarks(frame, results)
+
+            # -----------------------------------
+            # Predict Every 0.5 Seconds
+            # -----------------------------------
+            if time.time() - last_prediction_time >= 0.5:
+
+                if landmarks:
+
+                    prediction, confidence = predictor.predict(
+                        landmarks[0]
+                    )
+
+                    print(
+                        f"Prediction: {prediction} "
+                        f"({confidence * 100:.2f}%)"
+                    )
+
+                else:
+
+                    prediction = "No Hand"
+                    confidence = 0.0
+
+                last_prediction_time = time.time()
+
+            # -----------------------------------
+            # Display Prediction
+            # -----------------------------------
+            cv2.putText(
+                frame,
+                f"Prediction : {prediction}",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (0, 255, 255),
+                2,
+            )
 
             cv2.putText(
                 frame,
-                f"FPS: {fps}",
-                (20, 40),
+                f"Confidence : {confidence * 100:.2f}%",
+                (20, 80),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1,
+                0.8,
                 (0, 255, 0),
                 2,
             )
 
-            # -----------------------------
-            # Show Window
-            # -----------------------------
+            fps = fps_counter.get_fps()
+
+            cv2.putText(
+                frame,
+                f"FPS : {fps}",
+                (20, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 0),
+                2,
+            )
+
             cv2.imshow("SignSense AI", frame)
 
-            # Quit when Q is pressed
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("q"):
                 break
 
     finally:
+
         hand_detector.close()
         camera.release()
         cv2.destroyAllWindows()
-        print("👋 SignSense AI closed.")
+
+        print("\nSignSense AI Closed.")
 
 
 if __name__ == "__main__":
