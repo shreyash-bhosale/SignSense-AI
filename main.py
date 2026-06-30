@@ -18,6 +18,8 @@ def main():
     try:
         while True:
             frame = camera.read()
+            frame = cv2.flip(frame, 1)
+            
             results = hand_detector.process(frame)
             hand_detector.draw_landmarks(frame, results)
 
